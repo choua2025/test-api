@@ -10,7 +10,7 @@ app.get("/", (req, res) => {
 
 
 const server = app.listen(port, () => {
-    console.log(`Server is running on http://localhost:${port}`);
+    console.log(`Server is running on http://172.28.26.82:${port}`);
 });
 
 
