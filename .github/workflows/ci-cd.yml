@@ -33,7 +33,7 @@ jobs:
 
   deploy:
     name: Deploy to Windows Server
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, windows]
     needs: ci
     if: github.ref == 'refs/heads/main'
 
@@ -41,58 +41,65 @@ jobs:
       group: deploy-production
       cancel-in-progress: false
 
+    env:
+      APP_DIR: C:\inetpub\wwwroot\test-api
+      PM2_APP: test-api
+
+    defaults:
+      run:
+        shell: powershell
+
     steps:
-      - name: Deploy API
-        uses: appleboy/ssh-action@v1.2.0
-        with:
-          host: ${{ secrets.SERVER_HOST }}
-          username: ${{ secrets.SERVER_USER }}
-          key: ${{ secrets.SERVER_SSH_KEY }}
-          port: 22
-          timeout: 60s
-          command_timeout: 10m
-          script: |
-            $ErrorActionPreference = "Stop"
+      - name: Show deploy target
+        run: |
+          Write-Host "========== START DEPLOY =========="
+          Write-Host "App directory: $env:APP_DIR"
+          Write-Host "Commit:        $env:GITHUB_SHA"
+          Write-Host "Runner:        $env:RUNNER_NAME"
 
-            $AppDir = "C:\inetpub\wwwroot\test-api"
-            $Pm2App = "test-api"
+      - name: Fetch latest code
+        run: |
+          Set-Location $env:APP_DIR
+          Write-Host "Current directory: $(Get-Location)"
 
-            Write-Host "========== START DEPLOY =========="
-            Set-Location $AppDir
-            Write-Host "Current directory: $(Get-Location)"
+          git fetch --all --prune
+          if ($LASTEXITCODE -ne 0) { throw "git fetch failed" }
 
-            Write-Host "Fetching latest code..."
-            git fetch --all --prune
-            if ($LASTEXITCODE -ne 0) { Write-Host "git fetch failed"; exit 1 }
+          git checkout main
+          if ($LASTEXITCODE -ne 0) { throw "git checkout failed" }
 
-            Write-Host "Checkout main..."
-            git checkout main
-            if ($LASTEXITCODE -ne 0) { Write-Host "git checkout failed"; exit 1 }
+          git reset --hard origin/main
+          if ($LASTEXITCODE -ne 0) { throw "git reset failed" }
 
-            Write-Host "Reset to origin/main..."
-            git reset --hard origin/main
-            if ($LASTEXITCODE -ne 0) { Write-Host "git reset failed"; exit 1 }
-            git log -1 --oneline
+          git log -1 --oneline
 
-            Write-Host "Install dependencies..."
-            npm ci --omit=dev
-            if ($LASTEXITCODE -ne 0) { Write-Host "npm ci failed"; exit 1 }
+      - name: Install dependencies
+        run: |
+          Set-Location $env:APP_DIR
+          npm ci --omit=dev
+          if ($LASTEXITCODE -ne 0) { throw "npm ci failed" }
 
-            Write-Host "Build project..."
-            npm run build
-            if ($LASTEXITCODE -ne 0) { Write-Host "npm run build failed"; exit 1 }
+      - name: Build project
+        run: |
+          Set-Location $env:APP_DIR
+          npm run build
+          if ($LASTEXITCODE -ne 0) { throw "npm run build failed" }
 
-            Write-Host "Restart PM2..."
-            pm2 reload $Pm2App
-            if ($LASTEXITCODE -ne 0) {
-              Write-Host "Reload failed, starting app fresh..."
-              pm2 start src/index.js --name $Pm2App
-              if ($LASTEXITCODE -ne 0) { Write-Host "pm2 start failed"; exit 1 }
-            }
+      - name: Restart PM2
+        run: |
+          Set-Location $env:APP_DIR
 
-            Write-Host "Save PM2..."
-            pm2 save
-            pm2 list
+          pm2 reload $env:PM2_APP
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "Reload failed, starting app fresh..."
+            pm2 start src/index.js --name $env:PM2_APP
+            if ($LASTEXITCODE -ne 0) { throw "pm2 start failed" }
+          }
 
-            Write-Host "Deployment completed successfully."
-            Write-Host "========== END DEPLOY =========="
+          pm2 save
+          pm2 list
+
+      - name: Done
+        run: |
+          Write-Host "Deployment completed successfully."
+          Write-Host "========== END DEPLOY =========="
