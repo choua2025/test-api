@@ -14,10 +14,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
@@ -55,28 +55,22 @@ jobs:
           Write-Host "========== START DEPLOY =========="
           Write-Host "App directory: $env:APP_DIR"
           Write-Host "Commit:        $env:GITHUB_SHA"
-          Write-Host "Runner:        $env:RUNNER_NAME"
 
       - name: Fetch latest code
         run: |
           Set-Location $env:APP_DIR
-          Write-Host "Current directory: $(Get-Location)"
-
           git fetch --all --prune
           if ($LASTEXITCODE -ne 0) { throw "git fetch failed" }
-
           git checkout main
           if ($LASTEXITCODE -ne 0) { throw "git checkout failed" }
-
           git reset --hard origin/main
           if ($LASTEXITCODE -ne 0) { throw "git reset failed" }
-
           git log -1 --oneline
 
       - name: Install dependencies
         run: |
           Set-Location $env:APP_DIR
-          npm ci --omit=dev
+          npm ci
           if ($LASTEXITCODE -ne 0) { throw "npm ci failed" }
 
       - name: Build project
@@ -88,14 +82,12 @@ jobs:
       - name: Restart PM2
         run: |
           Set-Location $env:APP_DIR
-
           pm2 reload $env:PM2_APP
           if ($LASTEXITCODE -ne 0) {
             Write-Host "Reload failed, starting app fresh..."
             pm2 start src/index.js --name $env:PM2_APP
             if ($LASTEXITCODE -ne 0) { throw "pm2 start failed" }
           }
-
           pm2 save
           pm2 list
 
