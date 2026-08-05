@@ -32,48 +32,66 @@ jobs:
         run: npm run build
 
   deploy:
-    name: Deploy to Ubuntu Server
-    runs-on: ubuntu-latest
+    name: Deploy to Windows Server
+    runs-on: [self-hosted, windows]
     needs: ci
+    if: github.ref == 'refs/heads/main'
+
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+
+    env:
+      APP_DIR: C:\inetpub\wwwroot\test-api
+      PM2_APP: test-api
+
+    defaults:
+      run:
+        shell: powershell
 
     steps:
-      - name: Deploy API
-        uses: appleboy/ssh-action@v1.2.0
-        with:
-          host: ${{ secrets.SERVER_HOST }}
-          username: ${{ secrets.SERVER_USER }}
-          key: ${{ secrets.SERVER_SSH_KEY }}
-          port: 22
-          script_stop: true
-          script: |
-            echo "========== START DEPLOY =========="
+      - name: Show deploy target
+        run: |
+          Write-Host "========== START DEPLOY =========="
+          Write-Host "App directory: $env:APP_DIR"
+          Write-Host "Commit:        $env:GITHUB_SHA"
 
-            cd /var/www/test-api/test-api
+      - name: Fetch latest code
+        run: |
+          Set-Location $env:APP_DIR
+          git fetch --all --prune
+          if ($LASTEXITCODE -ne 0) { throw "git fetch failed" }
+          git checkout main
+          if ($LASTEXITCODE -ne 0) { throw "git checkout failed" }
+          git reset --hard origin/main
+          if ($LASTEXITCODE -ne 0) { throw "git reset failed" }
+          git log -1 --oneline
 
-            echo "Current directory:"
-            pwd
+      - name: Install dependencies
+        run: |
+          Set-Location $env:APP_DIR
+          npm ci --omit=dev
+          if ($LASTEXITCODE -ne 0) { throw "npm ci failed" }
 
-            echo "Fetching latest code..."
-            git fetch --all
+      - name: Build project
+        run: |
+          Set-Location $env:APP_DIR
+          npm run build
+          if ($LASTEXITCODE -ne 0) { throw "npm run build failed" }
 
-            echo "Checkout main..."
-            git checkout main
+      - name: Restart PM2
+        run: |
+          Set-Location $env:APP_DIR
+          pm2 reload $env:PM2_APP
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "Reload failed, starting app fresh..."
+            pm2 start src/index.js --name $env:PM2_APP
+            if ($LASTEXITCODE -ne 0) { throw "pm2 start failed" }
+          }
+          pm2 save
+          pm2 list
 
-            echo "Pull latest code..."
-            git pull origin main
-
-            echo "Install dependencies..."
-            npm ci
-
-            echo "Build project..."
-            npm run build
-
-            echo "Restart PM2..."
-            pm2 reload test-api || pm2 restart test-api
-
-            echo "Save PM2..."
-            pm2 save
-
-            echo "Deployment completed successfully."
-
-            echo "========== END DEPLOY =========="
+      - name: Done
+        run: |
+          Write-Host "Deployment completed successfully."
+          Write-Host "========== END DEPLOY =========="
