@@ -13,7 +13,7 @@ env:
 
 jobs:
   ci:
-    name: Build & Test
+    name: Lint & Build
     runs-on: ubuntu-latest
 
     steps:
