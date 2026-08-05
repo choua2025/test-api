@@ -1,21 +1,26 @@
 {
   "dependencies": {
-    "express": "^5.2.1",
-    "nodemon": "^3.1.14"
+    "express": "^5.2.1"
   },
   "name": "test-api",
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
-"scripts": {
-  "test": "echo \"Error: no test specified\" && exit 1",
-  "start": "node src/index.js",
-  "dev": "nodemon src/index.js",
-  "lint": "eslint src",
-  "build": "echo 'No build required'"
-},
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js",
+    "lint": "eslint src",
+    "build": "echo 'No build required'"
+  },
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "type": "module"
+  "type": "module",
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.8.0",
+    "globals": "^17.9.0",
+    "nodemon": "^3.1.14"
+  }
 }
