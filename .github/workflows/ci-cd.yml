@@ -38,7 +38,7 @@ jobs:
     if: github.ref == 'refs/heads/main'
 
     concurrency:
-      group: deploy-production
+      group: deploy-production 
       cancel-in-progress: false
 
     env:
