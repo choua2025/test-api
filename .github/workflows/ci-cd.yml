@@ -33,7 +33,7 @@ jobs:
 
   deploy:
     name: Deploy to Windows Server
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, windows]
     needs: ci
     if: github.ref == 'refs/heads/main'
 
@@ -42,37 +42,56 @@ jobs:
       cancel-in-progress: false
 
     env:
-      SERVER_HOST: ${{ secrets.SERVER_HOST }}
-      SERVER_NAME: ${{ secrets.SERVER_NAME }}
-      SSH_PORT: 22
+      APP_DIR: C:\inetpub\wwwroot\test-api
+      PM2_APP: test-api
+
+    defaults:
+      run:
+        shell: powershell
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Configure SSH
-        env:
-          SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+      - name: Show deploy target
         run: |
-          mkdir -p ~/.ssh
-          chmod 700 ~/.ssh
-          printf '%s\n' "$SERVER_SSH_KEY" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -p "$SSH_PORT" -H "$SERVER_HOST" >> ~/.ssh/known_hosts 2>/dev/null
-          chmod 644 ~/.ssh/known_hosts
+          Write-Host "========== START DEPLOY =========="
+          Write-Host "App directory: $env:APP_DIR"
+          Write-Host "Commit:        $env:GITHUB_SHA"
 
-      - name: Deploy over SSH
+      - name: Fetch latest code
         run: |
-          echo "========== START DEPLOY =========="
-          echo "Target: $SERVER_NAME@$SERVER_HOST:$SSH_PORT"
-          echo "Commit: $GITHUB_SHA"
-          ssh -i ~/.ssh/deploy_key \
-              -p "$SSH_PORT" \
-              -o BatchMode=yes \
-              -o ConnectTimeout=30 \
-              "$SERVER_NAME@$SERVER_HOST" \
-              "powershell -NoProfile -ExecutionPolicy Bypass -Command -" < cd/deploy.ps1
+          Set-Location $env:APP_DIR
+          git fetch --all --prune
+          if ($LASTEXITCODE -ne 0) { throw "git fetch failed" }
+          git checkout main
+          if ($LASTEXITCODE -ne 0) { throw "git checkout failed" }
+          git reset --hard origin/main
+          if ($LASTEXITCODE -ne 0) { throw "git reset failed" }
+          git log -1 --oneline
 
-      - name: Clean up SSH key
-        if: always()
-        run: rm -f ~/.ssh/deploy_key
+      - name: Install dependencies
+        run: |
+          Set-Location $env:APP_DIR
+          npm ci
+          if ($LASTEXITCODE -ne 0) { throw "npm ci failed" }
+
+      - name: Build project
+        run: |
+          Set-Location $env:APP_DIR
+          npm run build
+          if ($LASTEXITCODE -ne 0) { throw "npm run build failed" }
+
+      - name: Restart PM2
+        run: |
+          Set-Location $env:APP_DIR
+          pm2 reload $env:PM2_APP
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "Reload failed, starting app fresh..."
+            pm2 start src/index.js --name $env:PM2_APP
+            if ($LASTEXITCODE -ne 0) { throw "pm2 start failed" }
+          }
+          pm2 save
+          pm2 list
+
+      - name: Done
+        run: |
+          Write-Host "Deployment completed successfully."
+          Write-Host "========== END DEPLOY =========="
