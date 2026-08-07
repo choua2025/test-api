@@ -38,7 +38,7 @@ jobs:
     if: github.ref == 'refs/heads/main'
 
     concurrency:
-      group: deploy-production 
+      group: deploy-production
       cancel-in-progress: false
 
     env:
@@ -83,7 +83,8 @@ jobs:
       - name: Install dependencies
         run: |
           Set-Location $env:APP_DIR
-          npm ci
+          # --include=dev so pm2/build tools install even if NODE_ENV=production
+          npm ci --include=dev
           if ($LASTEXITCODE -ne 0) { throw "npm ci failed" }
 
       - name: Build project
@@ -92,17 +93,25 @@ jobs:
           npm run build
           if ($LASTEXITCODE -ne 0) { throw "npm run build failed" }
 
-      - name: Restart PM2
+      - name: Restart PM2 (test-api only)
         run: |
           Set-Location $env:APP_DIR
-          pm2 reload $env:PM2_APP
+
+          # Use the pm2 installed by 'npm ci' rather than whatever is on PATH,
+          # which varies with the account the runner service logs on as.
+          $pm2 = Join-Path $env:APP_DIR 'node_modules\.bin\pm2.cmd'
+          if (-not (Test-Path $pm2)) { throw "pm2 not found at $pm2 - did 'npm ci' run?" }
+
+          # Reload ONLY test-api. Other pm2 apps on this server are never touched.
+          & $pm2 reload $env:PM2_APP
           if ($LASTEXITCODE -ne 0) {
-            Write-Host "Reload failed, starting app fresh..."
-            pm2 start src/index.js --name $env:PM2_APP
+            Write-Host "Reload failed (app may not exist yet), starting fresh..."
+            & $pm2 start src/index.js --name $env:PM2_APP
             if ($LASTEXITCODE -ne 0) { throw "pm2 start failed" }
           }
-          pm2 save
-          pm2 list
+
+          # Show only test-api status (does not affect other apps)
+          & $pm2 describe $env:PM2_APP
 
       - name: Done
         run: |
